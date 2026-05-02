@@ -40,20 +40,23 @@ async def send_message(
     match detail_type:
         case "group":
             _channel_id = group_id
+            channel = client.get_channel(int(_channel_id)) if _channel_id else None
         case "private":
             _channel_id = user_id
+            channel = client.get_user(int(_channel_id)) if _channel_id else None
         case "channel":
             _channel_id = channel_id
+            channel = client.get_channel(int(_channel_id)) if _channel_id else None
         case _:
             logger.warning("无效的消息类型")
             return return_object.get(10003)
     if not _channel_id:
-        logger.warning("无效的频道号")
+        logger.warning("无效的目标ID")
         return return_object.get(10003)
 
-    if not (channel := client.get_channel(int(_channel_id))):
-        logger.warning(f"频道 {group_id} 不存在")
-        return return_object.get(35001, "频道（群号）不存在")
+    if not channel:
+        logger.warning(f"目标 {_channel_id} 不存在")
+        return return_object.get(35001, "目标不存在")
     parsed_message = await parser.parse_message(message)
     if _channel_id not in commands.deferred_sessions:
         try:
@@ -62,7 +65,7 @@ async def send_message(
             logger.debug(traceback.format_exc())
             return return_object.get(34000, str(e))
         message_id = msg.id
-        await commit_message(message_id, channel.id, int(time.time()))
+        await commit_message(message_id, msg.channel.id, int(time.time()))
     else:
         try:
             await commands.deferred_sessions[_channel_id][0](**parsed_message)

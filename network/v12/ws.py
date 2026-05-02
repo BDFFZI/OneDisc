@@ -23,7 +23,7 @@ class WebSocketServer:
         self.config.update(config)
         self.clients: list[fastapi.WebSocket] = []
         self.app = fastapi.FastAPI()
-        self.app.add_websocket_route("/", self.handle_ws_connect)
+        self.app.add_api_websocket_route("/", self.handle_ws_connect)
         self.check_access_token()
 
     def check_access_token(self) -> None:
@@ -55,16 +55,32 @@ class WebSocketServer:
                 },
             )
         )
-        while True:
-            recv_data = await websocket.receive_json()
-            logger.debug(recv_data)
-            await websocket.send_json(call_action.on_call_action(**recv_data))
+        try:
+            while True:
+                recv_data = await websocket.receive_json()
+                logger.debug(recv_data)
+                await websocket.send_json(call_action.on_call_action(**recv_data))
+        except fastapi.WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error(f"WebSocket 异常 (V12 WS): {repr(e)}")
+        finally:
+            if websocket in self.clients:
+                self.clients.remove(websocket)
 
     async def push_event(self, event: dict) -> None:
-        for websocket in self.clients:
+        for websocket in self.clients.copy():
             try:
                 await websocket.send_json(event)
+            except fastapi.WebSocketDisconnect:
+                if websocket in self.clients:
+                    self.clients.remove(websocket)
             except Exception as e:
-                logger.error(f"在 {websocket} 推送事件失败：{e}")
-                await websocket.close()
-                self.clients.remove(websocket)
+                if not (isinstance(e, RuntimeError) and "Unexpected ASGI message" in str(e)):
+                    logger.error(f"在 {websocket} 推送事件失败：{repr(e)}")
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
+                if websocket in self.clients:
+                    self.clients.remove(websocket)

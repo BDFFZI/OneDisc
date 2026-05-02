@@ -16,9 +16,9 @@ class WebSocket:
         self.config = BASE_CONFIG | config
         self.clients_on_event_route = []
         self.app = fastapi.FastAPI()
-        self.app.add_websocket_route("/", self.handle_root_route)
-        self.app.add_websocket_route("/event", self.handle_event_route)
-        self.app.add_websocket_route("/api", self.handle_api_route)
+        self.app.add_api_websocket_route("/", self.handle_root_route)
+        self.app.add_api_websocket_route("/event", self.handle_event_route)
+        self.app.add_api_websocket_route("/api", self.handle_api_route)
         self.check_access_token()
 
     def check_access_token(self) -> None:
@@ -44,11 +44,21 @@ class WebSocket:
             return
         await websocket.accept()
         self.clients_on_event_route.append(websocket)
-        await websocket.send_json(
-            await translator.translate_event(
-                event.get_event_object("meta", "lifecycle", "connect")
+        try:
+            await websocket.send_json(
+                await translator.translate_event(
+                    event.get_event_object("meta", "lifecycle", "connect")
+                )
             )
-        )
+            while True:
+                await websocket.receive_text()
+        except fastapi.WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error(f"WebSocket 异常 (Event): {repr(e)}")
+        finally:
+            if websocket in self.clients_on_event_route:
+                self.clients_on_event_route.remove(websocket)
 
     async def handle_api_route(self, websocket: fastapi.WebSocket) -> None:
         if not verify_access_token(websocket, self.config["access_token"]):
@@ -61,14 +71,19 @@ class WebSocket:
                 await websocket.close(401, "Missing access token")
             return
         await websocket.accept()
-        while True:
-            resp_data = await call_action.on_call_action(
-                **(await websocket.receive_json()), protocol_version=11
-            )
-            resp_data["retcode"] = {10001: 1400, 10002: 1404}.get(
-                resp_data["retcode"], resp_data["retcode"]
-            )
-            await websocket.send_json(resp_data)
+        try:
+            while True:
+                resp_data = await call_action.on_call_action(
+                    **(await websocket.receive_json()), protocol_version=11
+                )
+                resp_data["retcode"] = {10001: 1400, 10002: 1404}.get(
+                    resp_data["retcode"], resp_data["retcode"]
+                )
+                await websocket.send_json(resp_data)
+        except fastapi.WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error(f"WebSocket 异常 (API): {repr(e)}")
 
     async def handle_root_route(self, websocket: fastapi.WebSocket) -> None:
         if not verify_access_token(websocket, self.config["access_token"]):
@@ -82,21 +97,42 @@ class WebSocket:
             return
         await websocket.accept()
         self.clients_on_event_route.append(websocket)
-        while True:
-            resp_data = await call_action.on_call_action(
-                **(await websocket.receive_json()), protocol_version=12
+        try:
+            await websocket.send_json(
+                await translator.translate_event(
+                    event.get_event_object("meta", "lifecycle", "connect")
+                )
             )
-            resp_data["retcode"] = {10001: 1400, 10002: 1404}.get(
-                resp_data["retcode"], resp_data["retcode"]
-            )
-            await websocket.send_json(resp_data)
+            while True:
+                resp_data = await call_action.on_call_action(
+                    **(await websocket.receive_json()), protocol_version=11
+                )
+                resp_data["retcode"] = {10001: 1400, 10002: 1404}.get(
+                    resp_data["retcode"], resp_data["retcode"]
+                )
+                await websocket.send_json(resp_data)
+        except fastapi.WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error(f"WebSocket 异常 (Root): {repr(e)}")
+        finally:
+            if websocket in self.clients_on_event_route:
+                self.clients_on_event_route.remove(websocket)
 
     async def push_event(self, _event: dict) -> None:
         event = await translator.translate_event(_event)
-        for client in self.clients_on_event_route:
+        for client in self.clients_on_event_route.copy():
             try:
                 await client.send_json(event)
+            except fastapi.WebSocketDisconnect:
+                if client in self.clients_on_event_route:
+                    self.clients_on_event_route.remove(client)
             except Exception as e:
-                logger.error(f"向 {client} 推送事件时出现错误：{e}")
-                await client.close()
-                self.clients_on_event_route.remove(client)
+                if not (isinstance(e, RuntimeError) and "Unexpected ASGI message" in str(e)):
+                    logger.error(f"向 {client} 推送事件时出现错误：{repr(e)}")
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+                if client in self.clients_on_event_route:
+                    self.clients_on_event_route.remove(client)

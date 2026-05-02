@@ -41,9 +41,22 @@ async def translate_event(_event: dict) -> dict:
             case "private_message_delete":
                 event["notice_type"] = "friend_recall"
     elif event["post_type"] == "message":
-        event["raw_message"] = event.pop("alt_message")
+        event.pop("alt_message", None)
         event["sender"] = {"user_id": event["user_id"]}
         event["message"] = await translate_v12_message_to_v11(event["message"])
+        
+        raw_msg = ""
+        for seg in event["message"]:
+            if seg["type"] == "text":
+                text = str(seg["data"].get("text", ""))
+                raw_msg += text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
+            else:
+                data_str = ",".join(
+                    f"{k}={str(v).replace('&', '&amp;').replace('[', '&#91;').replace(']', '&#93;').replace(',', '&#44;')}" 
+                    for k, v in seg["data"].items()
+                )
+                raw_msg += f"[CQ:{seg['type']},{data_str}]" if data_str else f"[CQ:{seg['type']}]"
+        event["raw_message"] = raw_msg
 
         if sender := client.get_user(event["user_id"]):
             event["sender"]["nickname"] = sender.name

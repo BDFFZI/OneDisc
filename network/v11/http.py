@@ -13,7 +13,15 @@ class HttpServer:
     def __init__(self, config: dict) -> None:
         self.config = BASE_CONFIG | config
         self.app = fastapi.FastAPI()
-        self.app.add_route("/{action}", self.handle_request, ["GET", "POST"])
+        
+        @self.app.get("/hello")
+        async def hello():
+            return {"message": "hello"}
+
+        @self.app.api_route("/{action}", methods=["GET", "POST"])
+        async def handle_action(action: str, request: fastapi.Request):
+            return await self.handle_request(request, action)
+
         self.check_access_token()
 
     def check_access_token(self) -> None:
@@ -28,7 +36,7 @@ class HttpServer:
         )
 
     async def handle_request(
-        self, request: fastapi.Request
+        self, request: fastapi.Request, action: str
     ) -> fastapi.responses.JSONResponse:
         if not verify_access_token(request, self.config["access_token"]):
             if "Authorization" in request.headers.keys() or request.query_params.get(
@@ -37,20 +45,25 @@ class HttpServer:
                 raise fastapi.HTTPException(status_code=403, detail="Forbidden")
             else:
                 raise fastapi.HTTPException(status_code=401, detail="Unauthorized")
+        
+        params = {}
         match request.method:
             case "GET":
                 params = dict(request.query_params)
                 if "access_token" in params.keys():
                     del params["access_token"]
             case "POST":
-                params: dict = await request.json()
+                try:
+                    params = await request.json()
+                except Exception:
+                    params = {}
             case _:
                 raise fastapi.HTTPException(
                     status_code=405, detail=f"Method {request.method} not allowed"
                 )
 
         content = await call_action.on_call_action(
-            request.url.path[1:], params, params.get("echo"), 11
+            action, params, params.get("echo"), 11
         )
         self.check_retcode(content["retcode"])
 

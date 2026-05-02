@@ -61,7 +61,7 @@ class HttpServer:
             dict: 返回值
         """
         logger.debug(request)
-        if verify_access_token(request, self.config["access_token"]):
+        if not verify_access_token(request, self.config["access_token"]):
             raise fastapi.HTTPException(fastapi.status.HTTP_401_UNAUTHORIZED)
         logger.debug(await request.body())
         return fastapi.responses.JSONResponse(

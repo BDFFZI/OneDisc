@@ -15,7 +15,6 @@ class Server(uvicorn.Server):
 
     async def serve(self, sockets: List | None = None) -> None:
         await super().serve(sockets)
-        sys.exit()
 
 
 async def run(app: fastapi.FastAPI, port: int, host: str = "0.0.0.0", **params):

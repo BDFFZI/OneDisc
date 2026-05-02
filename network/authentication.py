@@ -14,7 +14,7 @@ def verify_access_token(
     Returns:
         bool: 是否通过验证
     """
-    if access_token is None:
+    if not access_token:
         return True
     if "Authorization" in request.headers.keys():
         return request.headers["Authorization"] == f"Bearer {access_token}"
