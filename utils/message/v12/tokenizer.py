@@ -1,7 +1,7 @@
 import re
 
 token_patterns = [
-    ("mention", "<@[0-9]+>"),
+    ("mention", "<@!?[0-9]+>"),
     ("mention_all", "@everyone"),
     ("emoji", "<:.+?:[0-9]+>"),
     ("channel", "<#[0-9]+>"),

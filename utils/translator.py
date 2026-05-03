@@ -1,5 +1,6 @@
 from utils.config import config
 import json
+import os
 import time
 import actions.v12.file as file
 from utils.client import client
@@ -51,12 +52,18 @@ async def translate_event(_event: dict) -> dict:
                 text = str(seg["data"].get("text", ""))
                 raw_msg += text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
             else:
+                # 兼容性优化：确保 at 码的 qq 参数排在最前面
+                items = list(seg["data"].items())
+                if seg["type"] == "at" and "qq" in seg["data"]:
+                    items.sort(key=lambda x: x[0] != "qq")
+                
                 data_str = ",".join(
                     f"{k}={str(v).replace('&', '&amp;').replace('[', '&#91;').replace(']', '&#93;').replace(',', '&#44;')}" 
-                    for k, v in seg["data"].items()
+                    for k, v in items
                 )
                 raw_msg += f"[CQ:{seg['type']},{data_str}]" if data_str else f"[CQ:{seg['type']}]"
         event["raw_message"] = raw_msg
+        logger.info(f"[V11 Raw Message] {event['raw_message']}")
 
         if sender := client.get_user(event["user_id"]):
             event["sender"]["nickname"] = sender.name
@@ -157,35 +164,35 @@ async def translate_message_array(_message: list) -> list:  # v11 -> v12
                     message[i]["data"] = {}
             case "reply":
                 message[i]["data"]["message_id"] = str(message[i]["data"].pop("id"))
-            case "image" | "record" | "video":
+            case "image" | "record" | "video" | "file":
                 if item["data"]["file"].startswith("http"):
                     file_name = (
                         (splited_url := item["data"]["file"].split("/"))[-1]
                         or splited_url[-2]
                         or f"{int(time.time())}"
                     )
-                    message[i]["data"]["file_id"] = (
-                        await file.upload_file("url", file_name, item["data"]["file"])
-                    )["data"]["file_id"]
-                elif item["data"]["file"].startswith("file"):
-                    file_name = (
-                        (splited_url := item["data"]["file"].split("/"))[-1]
-                        or splited_url[-2]
-                        or f"{int(time.time())}"
-                    )
-                    message[i]["data"]["file_id"] = (
-                        await file.upload_file(
-                            "name", file_name, path=item["data"]["file"][7:]
-                        )
-                    )["data"]["file_id"]
+                    upload_res = await file.upload_file("url", file_name, item["data"]["file"])
+                    message[i]["data"]["file_id"] = upload_res["data"]["file_id"] if upload_res["data"] else ""
                 elif item["data"]["file"].startswith("base64"):
-                    message[i]["data"]["file_id"] = (
-                        await file.upload_file(
+                    upload_res = await file.upload_file(
                             "data",
                             f"{int(time.time())}{config['system'].get('base64_default_image_type', '.png')}",
                             data=item["data"]["file"][9:],
                         )
-                    )["data"]["file_id"]
+                    message[i]["data"]["file_id"] = upload_res["data"]["file_id"] if upload_res["data"] else ""
+                else:
+                    # 如果没有协议头，尝试当作本地路径处理
+                    file_path = item["data"]["file"]
+                    if file_path.startswith("file://"):
+                        file_path = file_path[7:]
+                    
+                    file_name = os.path.basename(file_path) or f"{int(time.time())}"
+                    upload_res = await file.upload_file("name", file_name, path=file_path)
+                    if upload_res.get("retcode") != 0:
+                        logger.error(f"上传本地文件失败: {upload_res.get('message')} (路径: {file_path})")
+                        message[i]["data"]["file_id"] = ""
+                    else:
+                        message[i]["data"]["file_id"] = upload_res["data"]["file_id"]
                 if item["type"] == "record":
                     item["type"] = "voice"
             case "discord.channel":
@@ -232,7 +239,7 @@ async def translate_v12_message_to_v11(v12_message: list) -> list:
                 message[i]["data"]["qq"] = "all"
             case "reply":
                 message[i]["data"]["id"] = int(message[i]["data"]["message_id"])
-            case "image" | "voice" | "audio" | "video":
+            case "image" | "voice" | "audio" | "video" | "file":
                 with open(".cache/cached_url.json", "r", encoding="utf-8") as f:
                     cached_url = json.load(f)
                 if message[i]["data"]["file_id"] in cached_url:

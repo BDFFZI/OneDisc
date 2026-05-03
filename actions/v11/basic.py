@@ -18,7 +18,7 @@ import utils.message.v11.parser as parser
 from utils.message.v12 import parser as v12_parser
 import version
 import discord
-import actions.v12.file as file
+import actions.v12.file as v12_file
 import os.path
 
 logger = get_logger()
@@ -77,7 +77,7 @@ def clean_node_cache() -> None:
 
 @register_action("v11")
 async def clean_cache() -> dict:
-    await file.clean_files()
+    await v12_file.clean_files()
     try:
         clean_node_cache()
     except Exception:
@@ -376,3 +376,27 @@ async def set_group_admin(group_id: int, user_id: int, enable: bool = True) -> d
     )
     await channel.edit(overwrites=overwrites)
     return return_object.get(0)
+
+
+@register_action("v11")
+async def upload_private_file(user_id: int, file: str, name: str) -> dict:
+    return await send_private_msg(user_id, [{"type": "file", "data": {"file": file, "name": name}}])
+
+
+@register_action("v11")
+async def upload_group_file(group_id: int, file: str, name: str) -> dict:
+    return await send_group_msg(group_id, [{"type": "file", "data": {"file": file, "name": name}}])
+
+
+@register_action("v11")
+async def get_file(file: str) -> dict:
+    file_id = file.split("_")[0]
+    res = await v12_file.get_file(file_id=file_id, type="path")
+    if res["retcode"] == 0:
+        res["data"]["file"] = res["data"].pop("path")
+        res["data"]["file_name"] = res["data"].pop("name")
+        res["data"]["file_size"] = str(os.path.getsize(res["data"]["file"]))
+        res["data"]["url"] = (await v12_file.get_file(file_id=file_id, type="url")).get("data", {}).get("url", "")
+    return res
+
+

@@ -53,7 +53,7 @@ async def upload_file_from_url(
     retry_count: int = 0,
 ) -> bool:
     try:
-        async with httpx.AsyncClient(proxies=proxy) as client:
+        async with httpx.AsyncClient(proxy=proxy) as client:
             response = await client.get(url, headers=headers)
             if response.status_code == 200 and verify_sha256(response.content, sha256):
                 with open(f".cache/files/{name}", "wb") as f:
@@ -287,13 +287,17 @@ async def get_file(file_id: str, type: str) -> dict:
     """
     获取文件
     """
-    if not (file := get_file_name_by_id(file_id)):
+    if not (file := await get_file_name_by_id(file_id)):
         return return_object.get(31001, f"文件 {file_id} 不存在")
 
     match type:
 
         case "url":
-            return return_object.get(10004, "未实现的操作：获取文件 URL")  # TODO
+            with open(".cache/cached_url.json", "r", encoding="utf-8") as f:
+                cached_url_list = json.load(f)
+            if cache_data := cached_url_list.get(file_id):
+                return return_object.get(0, url=cache_data["url"])
+            return return_object.get(31002, "未找到该文件的 URL 缓存")
 
         case "path":
             return return_object.get(

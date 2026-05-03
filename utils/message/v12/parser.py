@@ -73,18 +73,19 @@ async def parse_message(message: list) -> dict:
                 case "mention_all":
                     message_data["content"] += "@everyone"
                 case "image" | "voice" | "audio" | "video" | "file":
-                    message_data["files"].append(
-                        discord.file.File(
-                            open(
-                                file.get_file_path(
-                                    await file.get_file_name_by_id(
-                                        segment["data"]["file_id"]
-                                    )
-                                ),
-                                "rb",
+                    file_id = segment["data"].get("file_id")
+                    file_name = await file.get_file_name_by_id(file_id) if file_id else None
+                    if file_name:
+                        message_data["files"].append(
+                            discord.file.File(
+                                open(
+                                    file.get_file_path(file_name),
+                                    "rb",
+                                )
                             )
                         )
-                    )
+                    else:
+                        logger.warning(f"无法找到文件 ID: {file_id}，已忽略该片段")
                     if segment["type"] == "voice":
                         logger.warning(
                             "OneDisc 暂不支持 voice 消息段，将以 audio 消息段发送"
@@ -155,7 +156,8 @@ def parse_string(string: str, msg: discord.Message | None = None) -> list:
     for token in tokenized_messages:
         match token[0]:
             case "mention":
-                message.append({"type": "mention", "data": {"user_id": token[1][2:-1]}})
+                user_id = token[1].replace("<@", "").replace("!", "").replace(">", "")
+                message.append({"type": "mention", "data": {"user_id": user_id}})
             case "mention_all":
                 message.append({"type": "mention_all", "data": {}})
             case "text":
