@@ -2,29 +2,6 @@
 
 <img src="./onedisc.png" width="180px" height="180px" alt="OneDisc LOGO" />
 
-配置模板
-
-```json
-{
-    "account_token": "你的token",
-    "system": {
-        "proxy": "http://127.0.0.1:7890",
-        "logger": {
-            "level": 20
-        }
-    },
-    "servers": [
-        {
-            "type": "ws",
-            "host": "0.0.0.0",
-            "port": 3002,
-            "access_token": "",
-            "protocol_version": 11
-        }
-    ]
-}
-```
-
 # OneDisc
 
 
@@ -73,3 +50,25 @@ OneDisc 在 Discord 上实现了 OneBot V11/V12 标准，并做了一些拓展
 ## 性能
 
 内存占用约 70MB，稳定运行无报错
+
+## 配置模板
+```json
+{
+    "account_token": "你的token",
+    "system": {
+        "proxy": "http://127.0.0.1:7890",
+        "logger": {
+            "level": 20
+        }
+    },
+    "servers": [
+        {
+            "type": "ws",
+            "host": "0.0.0.0",
+            "port": 3002,
+            "access_token": "",
+            "protocol_version": 11
+        }
+    ]
+}
+```
