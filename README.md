@@ -2,6 +2,29 @@
 
 <img src="./onedisc.png" width="180px" height="180px" alt="OneDisc LOGO" />
 
+配置模板
+
+```json
+{
+    "account_token": "你的token",
+    "system": {
+        "proxy": "http://127.0.0.1:7890",
+        "logger": {
+            "level": 20
+        }
+    },
+    "servers": [
+        {
+            "type": "ws",
+            "host": "0.0.0.0",
+            "port": 3002,
+            "access_token": "",
+            "protocol_version": 11
+        }
+    ]
+}
+```
+
 # OneDisc
 
 
