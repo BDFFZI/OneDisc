@@ -1,0 +1,6 @@
+discord.py
+sqlalchemy
+aiosqlite
+httpx
+uvicorn
+python-dotenv

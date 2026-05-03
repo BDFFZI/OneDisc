@@ -131,29 +131,110 @@ async def get_login_info() -> dict:
 
 @register_action("v11")
 async def get_msg(message_id: int) -> dict:
+    logger.info(f"[get_msg] 收到请求，消息 ID: {message_id}")
     async with get_session() as session:
-        message = await session.get_one(Message, message_id)
+        message = await session.get(Message, message_id)
+    if not message:
+        logger.warning(f"[get_msg] 数据库中未找到消息: {message_id}")
+        return return_object.get(1400, "消息不存在或未记录")
     message_data = await discord_api.call(
         "GET", f"/channels/{message.channel}/messages/{message.id}"
     )
+    logger.debug(f"[get_msg] Discord API 返回数据: {message_data}")
+    v11_message = await translator.translate_v12_message_to_v11(
+        v12_parser.parse_dict_message(message_data)
+    )
+    
+    # 生成 raw_message
+    raw_msg = ""
+    for seg in v11_message:
+        if seg["type"] == "text":
+            text = str(seg["data"].get("text", ""))
+            raw_msg += text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
+        else:
+            items = list(seg["data"].items())
+            if seg["type"] == "at" and "qq" in seg["data"]:
+                items.sort(key=lambda x: x[0] != "qq")
+            elif seg["type"] == "reply" and "id" in seg["data"]:
+                items.sort(key=lambda x: x[0] != "id")
+            data_str = ",".join(
+                f"{k}={str(v).replace('&', '&amp;').replace('[', '&#91;').replace(']', '&#93;').replace(',', '&#44;')}" 
+                for k, v in items
+            )
+            raw_msg += f"[CQ:{seg['type']},{data_str}]" if data_str else f"[CQ:{seg['type']}]"
+
+    channel = client.get_channel(message.channel)
+    group_name = channel.name if channel and hasattr(channel, "name") else ""
+    is_private = isinstance(channel, discord.DMChannel)
+
     return return_object.get(
         0,
         time=message.time,
-        message_type=(
-            "private" if message.channel == message_data["author"]["id"] else "group"
-        ),
+        message_type="private" if is_private else "group",
         message_id=message.id,
         real_id=message.id,
+        user_id=int(message_data["author"]["id"]),
+        group_id=0 if is_private else message.channel,
+        group_name=group_name,
         sender={
-            "user_id": message_data["author"]["id"],
-            "nickname": message_data["author"]["name"],
-            "card": message_data["author"]["display_name"],
+            "user_id": int(message_data["author"]["id"]),
+            "nickname": message_data["author"].get("username", "Unknown"),
+            "card": message_data["author"].get("display_name", ""),
             "sex": "unknown",
         },
-        message=translator.translate_message_array(
-            v12_parser.parse_dict_message(message_data)
-        ),
+        message=v11_message,
+        raw_message=raw_msg
     )
+
+
+@register_action("v11")
+async def get_forward_msg(id: str) -> dict:
+    try:
+        msg_id = int(id)
+    except ValueError:
+        return return_object.get(10003, "无效的 ID")
+        
+    async with get_session() as session:
+        message_record = await session.get(Message, msg_id)
+        
+    if not message_record:
+        return return_object.get(1400, "消息不存在或未记录")
+         
+    message_data = await discord_api.call(
+        "GET", f"/channels/{message_record.channel}/messages/{message_record.id}"
+    )
+    
+    v11_message = await translator.translate_v12_message_to_v11(
+        v12_parser.parse_dict_message(message_data)
+    )
+    
+    # 生成 raw_message
+    raw_msg = ""
+    for seg in v11_message:
+        if seg["type"] == "text":
+            text = str(seg["data"].get("text", ""))
+            raw_msg += text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
+        else:
+            items = list(seg["data"].items())
+            if seg["type"] == "at" and "qq" in seg["data"]:
+                items.sort(key=lambda x: x[0] != "qq")
+            elif seg["type"] == "reply" and "id" in seg["data"]:
+                items.sort(key=lambda x: x[0] != "id")
+            
+            data_str = ",".join(
+                f"{k}={str(v).replace('&', '&amp;').replace('[', '&#91;').replace(']', '&#93;').replace(',', '&#44;')}" 
+                for k, v in items
+            )
+            raw_msg += f"[CQ:{seg['type']},{data_str}]" if data_str else f"[CQ:{seg['type']}]"
+
+    return return_object.get(0, messages=[{
+        "sender": {
+            "user_id": int(message_data["author"]["id"]),
+            "nickname": message_data["author"].get("username", "Unknown")
+        },
+        "time": int(time.time()),
+        "content": raw_msg
+    }])
 
 
 @register_action("v11")

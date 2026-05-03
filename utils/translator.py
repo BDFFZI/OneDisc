@@ -52,10 +52,12 @@ async def translate_event(_event: dict) -> dict:
                 text = str(seg["data"].get("text", ""))
                 raw_msg += text.replace("&", "&amp;").replace("[", "&#91;").replace("]", "&#93;")
             else:
-                # 兼容性优化：确保 at 码的 qq 参数排在最前面
+                # 兼容性优化：确保 at 码的 qq 参数和 reply 码的 id 参数排在最前面
                 items = list(seg["data"].items())
                 if seg["type"] == "at" and "qq" in seg["data"]:
                     items.sort(key=lambda x: x[0] != "qq")
+                elif seg["type"] == "reply" and "id" in seg["data"]:
+                    items.sort(key=lambda x: x[0] != "id")
                 
                 data_str = ",".join(
                     f"{k}={str(v).replace('&', '&amp;').replace('[', '&#91;').replace(']', '&#93;').replace(',', '&#44;')}" 
@@ -78,11 +80,15 @@ async def translate_event(_event: dict) -> dict:
             event["sub_type"] = "normal"
             event["anonymous"] = None
             event["font"] = 0
-            if sender := client.get_channel(event["group_id"]).guild.get_member(
-                event["user_id"]
-            ):
-                event["sender"]["card"] = sender.nick
-                event["sender"]["role"] = basic.get_role(sender)
+            # 安全获取频道和成员信息
+            channel = client.get_channel(event["group_id"])
+            if channel:
+                event["group_name"] = channel.name if hasattr(channel, "name") else ""
+                if hasattr(channel, "guild") and (member := channel.guild.get_member(event["user_id"])):
+                    event["sender"]["card"] = member.nick
+                    event["sender"]["role"] = basic.get_role(member)
+            else:
+                event["group_name"] = ""
 
     elif event["post_type"] == "meta_event" and event["meta_event_type"] == "heartbeat":
         event["status"] = (await basic.get_status())["data"]

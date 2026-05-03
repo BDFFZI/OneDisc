@@ -47,6 +47,12 @@ async def on_message(message: discord.Message) -> None:
     await commit_message(
         message.id, message.channel.id, int(message.created_at.timestamp())
     )
+    if message.reference and message.reference.message_id:
+        await commit_message(
+            message.reference.message_id,
+            message.reference.channel_id or message.channel.id,
+            0
+        )
     if message.guild and config["system"].get("enable_channel_event"):
         event.new_event(
             _type="message",

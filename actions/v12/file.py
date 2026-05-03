@@ -29,6 +29,17 @@ except Exception:
 logger = get_logger()
 
 
+def sanitize_filename(name: str) -> str:
+    # 去除 URL 参数部分
+    if "?" in name:
+        name = name.split("?")[0]
+    # 替换 Windows 非法字符
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        name = name.replace(char, "_")
+    return name
+
+
 def verify_sha256(content: bytes, sha256: str | None) -> bool:
     if sha256 is None:
         return True
@@ -51,14 +62,17 @@ async def upload_file_from_url(
     proxy: str | None,
     sha256: str | None,
     retry_count: int = 0,
-) -> bool:
+) -> tuple[bool, str]:
+    # 处理可能的 HTML 转义（如 &amp;）
+    url = url.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'")
     try:
         async with httpx.AsyncClient(proxy=proxy) as client:
             response = await client.get(url, headers=headers)
             if response.status_code == 200 and verify_sha256(response.content, sha256):
-                with open(f".cache/files/{name}", "wb") as f:
+                safe_name = sanitize_filename(name)
+                with open(f".cache/files/{safe_name}", "wb") as f:
                     f.write(response.content)
-                return True
+                return True, safe_name
         logger.warning(
             f"下载文件 {url} (到 {name}) 失败：({response.status_code}) 远程返回错误或校验失败"
         )
@@ -67,7 +81,7 @@ async def upload_file_from_url(
             f"下载文件 {url} （到 {name}）时出现错误：{traceback.format_exc()}"
         )
     if retry_count <= 0:
-        return False
+        return False, ""
     return await upload_file_from_url(
         url, headers, name, proxy, sha256, retry_count - 1
     )
@@ -75,9 +89,10 @@ async def upload_file_from_url(
 
 def upload_file_from_data(name: str, data: str) -> tuple[bool, str]:
     try:
-        with open(f".cache/files/{name}", "wb") as f:
+        safe_name = sanitize_filename(name)
+        with open(f".cache/files/{safe_name}", "wb") as f:
             f.write(base64.b64decode(data))
-        return True, ""
+        return True, safe_name
     except Exception as e:
         logger.warning(f"向 {name} 写入 data 失败：{e}")
         return False, str(e)
@@ -106,10 +121,11 @@ def register_saved_file(name: str, _file_id: str | None = None) -> str:
 
 def upload_file_from_path(name: str, path: str) -> tuple[bool, str]:
     try:
+        safe_name = sanitize_filename(name)
         with open(path, "rb") as from_f:
-            with open(f".cache/files/{name}", "wb") as to_f:
+            with open(f".cache/files/{safe_name}", "wb") as to_f:
                 to_f.write(from_f.read())
-        return True, ""
+        return True, safe_name
     except Exception as e:
         logger.warning(f"从 {path} 获取文件 (到 {name}) 失败：{e}")
         return False, str(e)
@@ -208,9 +224,9 @@ async def upload_file(
                 sha256,
                 config["system"].get("download_max_retry_count", 0),
             )
-            if not is_successful:
+            if not is_successful[0]:
                 return return_object.get(33000)
-            return return_object.get(file_id=register_saved_file(name, file_id))
+            return return_object.get(file_id=register_saved_file(is_successful[1], file_id))
 
         case "name":
             type_checker.check_arguments(name, path)

@@ -152,6 +152,8 @@ async def parse_message(message: list) -> dict:
 
 def parse_string(string: str, msg: discord.Message | None = None) -> list:
     message = []
+    if msg and msg.reference and msg.reference.message_id:
+        message.append({"type": "reply", "data": {"message_id": str(msg.reference.message_id)}})
     tokenized_messages = tokenizer.tokenizer(string)
     for token in tokenized_messages:
         match token[0]:
@@ -229,7 +231,10 @@ def parse_string(string: str, msg: discord.Message | None = None) -> list:
 
 
 def parse_dict_message(msg: dict) -> list:
-    message = parse_string(msg["content"])
+    message = []
+    if msg.get("referenced_message"):
+        message.append({"type": "reply", "data": {"message_id": str(msg["referenced_message"]["id"])}})
+    message.extend(parse_string(msg["content"]))
     for attachment in msg["attachments"]:
         for file_type in ["image", "video", "audio"]:
             if attachment["content_type"].startswith(file_type):

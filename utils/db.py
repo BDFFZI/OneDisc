@@ -32,6 +32,8 @@ def get_session() -> AsyncSession:
 
 async def commit_message(id_: int, channel: int, time_: int) -> None:
     async with get_session() as session:
+        if await session.get(Message, id_):
+            return
         try:
             session.add(Message(id=id_, channel=channel, time=time_))
         except Exception:

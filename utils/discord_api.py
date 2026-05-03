@@ -19,7 +19,7 @@ class DiscordApiException(Exception):
 
 async def call(method: str, path: str, data: dict | None = None, **params) -> dict:
     async with httpx.AsyncClient(
-        proxies=config["system"].get("proxy"), base_url="https://discord.com/api/v10"
+        proxy=config["system"].get("proxy"), base_url="https://discord.com/api/v10"
     ) as client:
         response = await client.request(
             method,
